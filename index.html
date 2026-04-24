@@ -1,140 +1,129 @@
-import React, { useEffect, useState } from "react";
-
-export default function WeatherDashboard() {
-  const [alerts, setAlerts] = useState([]);
-  const [seenAlerts, setSeenAlerts] = useState({});
-  const [radarOn, setRadarOn] = useState(false);
-  const [soundEnabled, setSoundEnabled] = useState(true);
-
-  const fetchAlerts = async () => {
-    try {
-      const res = await fetch("https://api.weather.gov/alerts/active");
-      const data = await res.json();
-
-      const newAlerts = data.features || [];
-
-      if (newAlerts.length > alerts.length && soundEnabled) {
-        const audio = new Audio("https://actions.google.com/sounds/v1/alarms/beep_short.ogg");
-        audio.play();
-      }
-
-      setAlerts(newAlerts);
-    } catch (err) {
-      console.error("Error fetching alerts:", err);
-    }
-  };
-
-  useEffect(() => {
-    fetchAlerts();
-    const interval = setInterval(fetchAlerts, 60000);
-    return () => clearInterval(interval);
-  }, [alerts]);
-
-  const toggleSeen = (id) => {
-    setSeenAlerts((prev) => ({
-      ...prev,
-      [id]: !prev[id]
-    }));
-  };
-
-  const notifyUser = (alert) => {
-    if (Notification.permission === "granted") {
-      new Notification(alert.properties.headline, {
-        body: alert.properties.description
-      });
-    }
-  };
-
-  const requestPermission = () => {
-    Notification.requestPermission();
-  };
-
-  return (
-    <div style={{ display: "flex", height: "100vh" }}>
-      {/* Map Section */}
-      <div style={{ flex: 3, position: "relative" }}>
-        <iframe
-          title="map"
-          src={radarOn
-            ? "https://radar.weather.gov/"
-            : "https://www.weather.gov/"}
-          style={{ width: "100%", height: "100%", border: "none" }}
-        />
-
-        <button
-          onClick={() => setRadarOn(!radarOn)}
-          style={{ position: "absolute", top: 10, left: 10 }}
-        >
-          Toggle Radar
-        </button>
-      </div>
-
-      {/* Dashboard */}
-      <div style={{ flex: 1, padding: 10, overflowY: "scroll", background: "#111", color: "white" }}>
-        <h2>Active Alerts</h2>
-
-        <button onClick={fetchAlerts}>Refresh Alerts</button>
-        <button onClick={requestPermission}>Enable Notifications</button>
-
-        <label>
-          <input
-            type="checkbox"
-            checked={soundEnabled}
-            onChange={() => setSoundEnabled(!soundEnabled)}
-          />
-          Sound Alerts
-        </label>
-
-        {alerts.map((alert, index) => {
-          const id = alert.id;
-          const seen = seenAlerts[id];
-
-          return (
-            <div
-              key={index}
-              style={{
-                border: "1px solid gray",
-                margin: "10px 0",
-                padding: "10px",
-                background: seen ? "#444" : "#800"
-              }}
-            >
-              <h4>{alert.properties.event}</h4>
-
-              <label>
-                <input
-                  type="checkbox"
-                  checked={seen || false}
-                  onChange={() => toggleSeen(id)}
-                />
-                Mark as Seen
-              </label>
-
-              <details>
-                <summary>Description</summary>
-                <p>{alert.properties.description}</p>
-                <a
-                  href={alert.properties.uri}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  View Full Alert
-                </a>
-              </details>
-
-              <button onClick={() => notifyUser(alert)}>
-                Notify Me
-              </button>
-
-              <iframe
-                title="zoom"
-                src={`https://www.google.com/maps?q=${alert.geometry?.coordinates?.[0]?.[1] || 0},${alert.geometry?.coordinates?.[0]?.[0] || 0}&z=8&output=embed`}
-                style={{ width: "100%", height: "150px", border: "none", marginTop: 5 }}
-              />
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weather Alert Monitor</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<style>
+body { margin:0; font-family: Arial; }
+#map { position:absolute; top:0; bottom:0; left:0; right:300px; }
+#dashboard {
+  position:absolute;
+  top:0;
+  right:0;
+  width:300px;
+  height:100%;
+  background:#111;
+  color:#fff;
+  overflow-y:auto;
+  padding:10px;
 }
+.alert { border:1px solid #444; padding:8px; margin-bottom:8px; }
+.seen { background:#333 !important; }
+button, select { width:100%; margin-top:5px; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="dashboard">
+  <h3>Active Alerts</h3>
+  <button onclick="refreshAlerts()">Refresh Alerts</button>
+  <label><input type="checkbox" id="radarToggle"> Radar Overlay</label>
+  <label><input type="checkbox" id="notifyToggle"> Desktop Notifications</label>
+  <select id="soundSelect">
+    <option value="beep">Beep</option>
+    <option value="alert">Alert</option>
+  </select>
+  <div id="alerts"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+let map = L.map('map').setView([39,-95],4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let radarLayer = L.tileLayer('https://tilecache.rainviewer.com/v2/radar/nowcast/256/{z}/{x}/{y}/2/1_1.png');
+
+document.getElementById('radarToggle').onchange = function() {
+  if(this.checked) map.addLayer(radarLayer);
+  else map.removeLayer(radarLayer);
+};
+
+let alertsLayer = L.layerGroup().addTo(map);
+let lastAlertCount = 0;
+
+async function fetchAlerts() {
+  let res = await fetch('https://api.weather.gov/alerts/active');
+  let data = await res.json();
+  return data.features;
+}
+
+function playSound() {
+  let type = document.getElementById('soundSelect').value;
+  let audio = new Audio(type === 'beep' ? 'https://actions.google.com/sounds/v1/alarms/beep_short.ogg' : 'https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg');
+  audio.play();
+}
+
+function notify(text) {
+  if(Notification.permission === 'granted') {
+    new Notification(text);
+  }
+}
+
+async function refreshAlerts() {
+  let alerts = await fetchAlerts();
+  alertsLayer.clearLayers();
+  document.getElementById('alerts').innerHTML = '';
+
+  if(alerts.length > lastAlertCount) {
+    if(document.getElementById('notifyToggle').checked) {
+      playSound();
+      notify('New Weather Alert!');
+    }
+  }
+  lastAlertCount = alerts.length;
+
+  alerts.forEach(alert => {
+    let coords = alert.geometry ? alert.geometry.coordinates[0] : null;
+    if(coords) {
+      let latlngs = coords.map(c => [c[1], c[0]]);
+      let polygon = L.polygon(latlngs, {color:'red'}).addTo(alertsLayer);
+      polygon.on('click', () => map.fitBounds(polygon.getBounds()));
+    }
+
+    let div = document.createElement('div');
+    div.className = 'alert';
+
+    let checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.onchange = () => {
+      div.classList.toggle('seen');
+    };
+
+    let select = document.createElement('select');
+    let opt = document.createElement('option');
+    opt.text = alert.properties.headline;
+    select.add(opt);
+
+    select.onchange = () => {
+      window.open(alert.properties.uri, '_blank');
+    };
+
+    div.innerHTML += `<strong>${alert.properties.event}</strong><br>${alert.properties.areaDesc}`;
+    div.appendChild(checkbox);
+    div.appendChild(select);
+
+    document.getElementById('alerts').appendChild(div);
+  });
+}
+
+if("Notification" in window) {
+  Notification.requestPermission();
+}
+
+refreshAlerts();
+setInterval(refreshAlerts, 60000);
+</script>
+</body>
+</html>
