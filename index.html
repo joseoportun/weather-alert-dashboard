@@ -10,25 +10,36 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    body { margin:0; font-family: Arial; display:flex; }
+    body { margin:0; font-family: Arial; display:flex; background:#0b1a12; color:#d4f5dd; }
     #sidebar {
-      width: 320px;
+      width: 340px;
       height: 100vh;
       overflow-y: auto;
-      background: #111;
-      color: #fff;
-      padding: 10px;
+      background: #0f2418;
+      padding: 12px;
+      border-right:1px solid #1f4d34;
     }
     #map { flex:1; height:100vh; }
     .alert {
-      border:1px solid #444;
-      margin-bottom:10px;
+      border:1px solid #1f4d34;
+      margin-bottom:12px;
       padding:10px;
-      background:#1c1c1c;
+      background:#132c1d;
+      border-radius:6px;
     }
     .alert h4 { margin:0 0 5px 0; }
-    .mini-map { height:150px; margin-top:5px; }
-    select { width:100%; margin-bottom:10px; }
+    .mini-map { height:140px; margin-top:6px; }
+    select, button {
+      width:100%;
+      margin-bottom:10px;
+      background:#0b1a12;
+      color:#d4f5dd;
+      border:1px solid #1f4d34;
+      padding:6px;
+    }
+    button { cursor:pointer; }
+    .dropdown { margin-top:6px; display:none; font-size:13px; }
+    .toggle { cursor:pointer; color:#7be0a1; }
   </style>
 </head>
 <body>
@@ -52,12 +63,19 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 let allAlerts = [];
 let markers = [];
 
+function getColor(event) {
+  if (event === 'Tornado Warning') return 'red';
+  if (event === 'Flash Flood Warning') return 'blue';
+  return 'gray';
+}
+
 async function fetchAlerts() {
   const res = await fetch('https://api.weather.gov/alerts/active');
   const data = await res.json();
-  allAlerts = data.features.filter(a => 
-    a.properties.event.includes('Tornado') || 
-    a.properties.event.includes('Flood')
+
+  allAlerts = data.features.filter(a =>
+    a.properties.event === 'Tornado Warning' ||
+    a.properties.event === 'Flash Flood Warning'
   );
 
   populateStates();
@@ -65,8 +83,13 @@ async function fetchAlerts() {
 }
 
 function populateStates() {
-  const states = [...new Set(allAlerts.map(a => a.properties.areaDesc))];
   const select = document.getElementById('stateFilter');
+  select.innerHTML = '<option value="">All States</option>';
+
+  const states = [...new Set(
+    allAlerts.map(a => a.properties.geocode?.UGC?.[0]?.slice(0,2)).filter(Boolean)
+  )];
+
   states.forEach(s => {
     const opt = document.createElement('option');
     opt.value = s;
@@ -80,6 +103,11 @@ function clearMarkers() {
   markers = [];
 }
 
+function zoomTo(coords) {
+  const bounds = L.polygon(coords).getBounds();
+  map.fitBounds(bounds);
+}
+
 function renderAlerts() {
   const container = document.getElementById('alerts');
   container.innerHTML = '';
@@ -87,21 +115,28 @@ function renderAlerts() {
 
   const state = document.getElementById('stateFilter').value;
 
-  const filtered = allAlerts.filter(a => !state || a.properties.areaDesc === state);
+  const filtered = allAlerts.filter(a => {
+    const code = a.properties.geocode?.UGC?.[0]?.slice(0,2);
+    return !state || code === state;
+  });
 
   filtered.forEach((alert, i) => {
     const div = document.createElement('div');
     div.className = 'alert';
 
     const props = alert.properties;
+    const shortDesc = props.headline || props.event;
 
     div.innerHTML = `
       <h4>${props.event}</h4>
+      <p>${shortDesc}</p>
       <p><b>Area:</b> ${props.areaDesc}</p>
       <p><b>Start:</b> ${new Date(props.effective).toLocaleString()}</p>
       <p><b>End:</b> ${new Date(props.expires).toLocaleString()}</p>
       <a href="${props.uri}" target="_blank">Open Alert</a><br/>
-      <label><input type="checkbox"> Seen</label>
+      <button onclick="zoomTo(window.coords${i})">Zoom to Alert</button>
+      <div class="toggle" onclick="toggleDesc(${i})">Show Details</div>
+      <div id="desc-${i}" class="dropdown">${props.description}</div>
       <div id="mini-${i}" class="mini-map"></div>
     `;
 
@@ -109,20 +144,28 @@ function renderAlerts() {
 
     if (alert.geometry) {
       const coords = alert.geometry.coordinates[0].map(c => [c[1], c[0]]);
+      window[`coords${i}`] = coords;
 
-      const polygon = L.polygon(coords).addTo(map);
+      const polygon = L.polygon(coords, { color: getColor(props.event) }).addTo(map);
       markers.push(polygon);
 
       const miniMap = L.map(`mini-${i}`, { zoomControl:false, attributionControl:false });
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(miniMap);
-      const miniPoly = L.polygon(coords).addTo(miniMap);
+      const miniPoly = L.polygon(coords, { color: getColor(props.event) }).addTo(miniMap);
       miniMap.fitBounds(miniPoly.getBounds());
     }
   });
 }
 
+function toggleDesc(i) {
+  const el = document.getElementById(`desc-${i}`);
+  el.style.display = el.style.display === 'block' ? 'none' : 'block';
+}
+
+
 document.getElementById('stateFilter').addEventListener('change', renderAlerts);
 
+setInterval(fetchAlerts, 300000);
 fetchAlerts();
 </script>
 
