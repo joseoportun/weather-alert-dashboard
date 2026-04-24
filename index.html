@@ -10,36 +10,74 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    body { margin:0; font-family: Arial; display:flex; background:#0b1a12; color:#d4f5dd; }
+    body {
+      margin:0;
+      font-family: Arial, sans-serif;
+      display:flex;
+      background: linear-gradient(135deg,#0a1a12,#06110c);
+      color:#e6fff1;
+    }
+
     #sidebar {
       width: 340px;
       height: 100vh;
       overflow-y: auto;
-      background: #0f2418;
-      padding: 12px;
-      border-right:1px solid #1f4d34;
+      padding: 15px;
+      backdrop-filter: blur(12px);
+      background: rgba(15,40,25,0.6);
+      border-right:1px solid rgba(100,255,180,0.15);
     }
-    #map { flex:1; height:100vh; }
+
+    #map {
+      flex:1;
+      height:100vh;
+    }
+
     .alert {
-      border:1px solid #1f4d34;
       margin-bottom:12px;
-      padding:10px;
-      background:#132c1d;
-      border-radius:6px;
+      padding:12px;
+      border-radius:10px;
+      backdrop-filter: blur(10px);
+      background: rgba(20,60,40,0.45);
+      border:1px solid rgba(120,255,180,0.15);
+      box-shadow: 0 0 10px rgba(0,255,150,0.05);
     }
-    .alert h4 { margin:0 0 5px 0; }
-    .mini-map { height:140px; margin-top:6px; }
+
+    .alert h4 { margin:0 0 6px 0; }
+
+    .mini-map {
+      height:130px;
+      margin-top:8px;
+      border-radius:8px;
+      overflow:hidden;
+    }
+
     select, button {
       width:100%;
       margin-bottom:10px;
-      background:#0b1a12;
-      color:#d4f5dd;
-      border:1px solid #1f4d34;
-      padding:6px;
+      padding:8px;
+      border-radius:8px;
+      border:1px solid rgba(120,255,180,0.2);
+      background: rgba(0,0,0,0.3);
+      color:#e6fff1;
     }
-    button { cursor:pointer; }
-    .dropdown { margin-top:6px; display:none; font-size:13px; }
-    .toggle { cursor:pointer; color:#7be0a1; }
+
+    button:hover {
+      background: rgba(0,255,150,0.1);
+    }
+
+    .dropdown {
+      margin-top:6px;
+      display:none;
+      font-size:13px;
+      opacity:0.9;
+    }
+
+    .toggle {
+      cursor:pointer;
+      color:#7bffc3;
+      margin-top:6px;
+    }
   </style>
 </head>
 <body>
@@ -69,6 +107,16 @@ function getColor(event) {
   return 'gray';
 }
 
+function getFixedLink(event) {
+  if (event === 'Tornado Warning') {
+    return 'https://forecast.weather.gov/wwamap/wwatxtget.php?cwa=usa&wwa=Tornado%20Warning';
+  }
+  if (event === 'Flash Flood Warning') {
+    return 'https://forecast.weather.gov/wwamap/wwatxtget.php?cwa=usa&wwa=Flash%20Flood%20Warning';
+  }
+  return '#';
+}
+
 async function fetchAlerts() {
   const res = await fetch('https://api.weather.gov/alerts/active');
   const data = await res.json();
@@ -87,7 +135,9 @@ function populateStates() {
   select.innerHTML = '<option value="">All States</option>';
 
   const states = [...new Set(
-    allAlerts.map(a => a.properties.geocode?.UGC?.[0]?.slice(0,2)).filter(Boolean)
+    allAlerts
+      .map(a => a.properties.geocode?.UGC?.[0]?.slice(0,2))
+      .filter(Boolean)
   )];
 
   states.forEach(s => {
@@ -125,18 +175,22 @@ function renderAlerts() {
     div.className = 'alert';
 
     const props = alert.properties;
-    const shortDesc = props.headline || props.event;
+
+    const link = getFixedLink(props.event);
 
     div.innerHTML = `
       <h4>${props.event}</h4>
-      <p>${shortDesc}</p>
+      <p>${props.headline || ''}</p>
       <p><b>Area:</b> ${props.areaDesc}</p>
       <p><b>Start:</b> ${new Date(props.effective).toLocaleString()}</p>
       <p><b>End:</b> ${new Date(props.expires).toLocaleString()}</p>
-      <a href="${props.uri}" target="_blank">Open Alert</a><br/>
+      <a href="${link}" target="_blank">Open Alert</a>
+
       <button onclick="zoomTo(window.coords${i})">Zoom to Alert</button>
+
       <div class="toggle" onclick="toggleDesc(${i})">Show Details</div>
       <div id="desc-${i}" class="dropdown">${props.description}</div>
+
       <div id="mini-${i}" class="mini-map"></div>
     `;
 
@@ -146,12 +200,24 @@ function renderAlerts() {
       const coords = alert.geometry.coordinates[0].map(c => [c[1], c[0]]);
       window[`coords${i}`] = coords;
 
-      const polygon = L.polygon(coords, { color: getColor(props.event) }).addTo(map);
+      const polygon = L.polygon(coords, {
+        color: getColor(props.event),
+        weight: 3
+      }).addTo(map);
+
       markers.push(polygon);
 
-      const miniMap = L.map(`mini-${i}`, { zoomControl:false, attributionControl:false });
+      const miniMap = L.map(`mini-${i}`, {
+        zoomControl:false,
+        attributionControl:false
+      });
+
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(miniMap);
-      const miniPoly = L.polygon(coords, { color: getColor(props.event) }).addTo(miniMap);
+
+      const miniPoly = L.polygon(coords, {
+        color: getColor(props.event)
+      }).addTo(miniMap);
+
       miniMap.fitBounds(miniPoly.getBounds());
     }
   });
