@@ -9,8 +9,8 @@
 body {
   margin: 0;
   font-family: Arial, sans-serif;
-  background: #0b1f14;
-  color: #d4f5e9;
+  background: linear-gradient(135deg, #07140d, #0b2a1c);
+  color: #e6fff5;
 }
 
 #container {
@@ -21,32 +21,41 @@ body {
 #sidebar {
   width: 320px;
   overflow-y: auto;
-  background: #0f2a1c;
-  padding: 10px;
-  border-right: 2px solid #1f4d36;
+  padding: 12px;
+  backdrop-filter: blur(12px);
+  background: rgba(15, 40, 28, 0.6);
+  border-right: 1px solid rgba(255,255,255,0.1);
 }
 
 .alert {
-  border: 1px solid #1f4d36;
-  border-radius: 8px;
-  margin-bottom: 10px;
+  border-radius: 12px;
+  margin-bottom: 12px;
   padding: 10px;
+  backdrop-filter: blur(10px);
+  background: rgba(20, 50, 35, 0.5);
+  border: 1px solid rgba(255,255,255,0.08);
 }
 
-.alert.red { border-left: 6px solid red; }
-.alert.blue { border-left: 6px solid blue; }
+.alert.red { border-left: 5px solid #ff4d4d; }
+.alert.blue { border-left: 5px solid #4da6ff; }
 
 .alert h4 {
   margin: 0 0 5px 0;
 }
 
 button, select {
-  margin-top: 5px;
-  background: #1f4d36;
+  margin-top: 6px;
+  background: rgba(255,255,255,0.1);
   color: white;
-  border: none;
-  padding: 5px;
-  border-radius: 4px;
+  border: 1px solid rgba(255,255,255,0.2);
+  padding: 6px;
+  border-radius: 6px;
+  backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+
+button:hover, select:hover {
+  background: rgba(255,255,255,0.2);
 }
 
 #map {
@@ -55,7 +64,22 @@ button, select {
 
 .mini-map {
   height: 150px;
-  margin-top: 5px;
+  margin-top: 6px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+h3 {
+  margin-top: 0;
+}
+
+summary {
+  cursor: pointer;
+  font-weight: bold;
+}
+
+a {
+  color: #7fffd4;
 }
 </style>
 </head>
@@ -93,9 +117,13 @@ async function fetchAlerts() {
 
 function populateStates() {
   const select = document.getElementById('stateFilter');
-  const states = new Set();
+  select.innerHTML = '<option value="ALL">All States</option>';
 
-  allAlerts.forEach(a => states.add(a.properties.areaDesc.split(', ')[0]));
+  const states = new Set();
+  allAlerts.forEach(a => {
+    const parts = a.properties.areaDesc.split(', ');
+    if (parts.length > 0) states.add(parts[parts.length - 1]);
+  });
 
   states.forEach(s => {
     const opt = document.createElement('option');
@@ -113,7 +141,8 @@ function renderAlerts() {
 
   allAlerts.forEach((alert, i) => {
     const props = alert.properties;
-    const state = props.areaDesc.split(', ')[0];
+    const parts = props.areaDesc.split(', ');
+    const state = parts[parts.length - 1];
 
     if (filter !== 'ALL' && state !== filter) return;
 
@@ -128,8 +157,8 @@ function renderAlerts() {
     content.innerHTML = `
       <p><b>State:</b> ${state}</p>
       <p><b>Counties:</b> ${props.areaDesc}</p>
-      <p><b>Start:</b> ${props.effective}</p>
-      <p><b>End:</b> ${props.expires}</p>
+      <p><b>Start:</b> ${new Date(props.effective).toLocaleString()}</p>
+      <p><b>End:</b> ${new Date(props.expires).toLocaleString()}</p>
       <a href="${props.uri}" target="_blank">Open Alert</a>
       <br>
       <label><input type="checkbox"> Seen</label>
@@ -150,9 +179,11 @@ function renderAlerts() {
 
 function drawMain(alert) {
   if (!alert.geometry) return;
-  const geo = L.geoJSON(alert.geometry, {
+  L.geoJSON(alert.geometry, {
     style: {
-      color: alert.properties.event.includes('Tornado') ? 'red' : 'blue'
+      color: alert.properties.event.includes('Tornado') ? '#ff4d4d' : '#4da6ff',
+      weight: 2,
+      fillOpacity: 0.2
     }
   }).addTo(map);
 }
