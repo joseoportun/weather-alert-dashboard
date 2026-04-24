@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Weather Alerts Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Leaflet -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    body { margin:0; font-family: Arial; display:flex; }
+    #sidebar {
+      width: 320px;
+      height: 100vh;
+      overflow-y: auto;
+      background: #111;
+      color: #fff;
+      padding: 10px;
+    }
+    #map { flex:1; height:100vh; }
+    .alert {
+      border:1px solid #444;
+      margin-bottom:10px;
+      padding:10px;
+      background:#1c1c1c;
+    }
+    .alert h4 { margin:0 0 5px 0; }
+    .mini-map { height:150px; margin-top:5px; }
+    select { width:100%; margin-bottom:10px; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h2>Alerts Dashboard</h2>
+
+  <select id="stateFilter">
+    <option value="">All States</option>
+  </select>
+
+  <div id="alerts"></div>
+</div>
+
+<div id="map"></div>
+
+<script>
+const map = L.map('map').setView([39.5, -98.35], 4);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let allAlerts = [];
+let markers = [];
+
+async function fetchAlerts() {
+  const res = await fetch('https://api.weather.gov/alerts/active');
+  const data = await res.json();
+  allAlerts = data.features.filter(a => 
+    a.properties.event.includes('Tornado') || 
+    a.properties.event.includes('Flood')
+  );
+
+  populateStates();
+  renderAlerts();
+}
+
+function populateStates() {
+  const states = [...new Set(allAlerts.map(a => a.properties.areaDesc))];
+  const select = document.getElementById('stateFilter');
+  states.forEach(s => {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = s;
+    select.appendChild(opt);
+  });
+}
+
+function clearMarkers() {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+}
+
+function renderAlerts() {
+  const container = document.getElementById('alerts');
+  container.innerHTML = '';
+  clearMarkers();
+
+  const state = document.getElementById('stateFilter').value;
+
+  const filtered = allAlerts.filter(a => !state || a.properties.areaDesc === state);
+
+  filtered.forEach((alert, i) => {
+    const div = document.createElement('div');
+    div.className = 'alert';
+
+    const props = alert.properties;
+
+    div.innerHTML = `
+      <h4>${props.event}</h4>
+      <p><b>Area:</b> ${props.areaDesc}</p>
+      <p><b>Start:</b> ${new Date(props.effective).toLocaleString()}</p>
+      <p><b>End:</b> ${new Date(props.expires).toLocaleString()}</p>
+      <a href="${props.uri}" target="_blank">Open Alert</a><br/>
+      <label><input type="checkbox"> Seen</label>
+      <div id="mini-${i}" class="mini-map"></div>
+    `;
+
+    container.appendChild(div);
+
+    if (alert.geometry) {
+      const coords = alert.geometry.coordinates[0].map(c => [c[1], c[0]]);
+
+      const polygon = L.polygon(coords).addTo(map);
+      markers.push(polygon);
+
+      const miniMap = L.map(`mini-${i}`, { zoomControl:false, attributionControl:false });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(miniMap);
+      const miniPoly = L.polygon(coords).addTo(miniMap);
+      miniMap.fitBounds(miniPoly.getBounds());
+    }
+  });
+}
+
+document.getElementById('stateFilter').addEventListener('change', renderAlerts);
+
+fetchAlerts();
+</script>
+
+</body>
+</html>
